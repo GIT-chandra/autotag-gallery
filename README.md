@@ -1,2 +1,2 @@
 # garo
-Supercharged Media Gallery
+Supercharged Image Gallery
