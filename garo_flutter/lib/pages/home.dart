@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:easy_image_viewer/easy_image_viewer.dart';
@@ -5,7 +7,9 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as dart_path;
 import 'dart:developer' as developer;
-import 'package:image/image.dart' as img;
+import 'package:http/http.dart' as http;
+
+// 192.168.0.110:8000/
 
 class LocalImageProvider extends EasyImageProvider {
   final List<String> photoPaths;
@@ -52,16 +56,59 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-  double thumbLoadingFrac = 0.0;
-  String thumbLoadingText = '';
-  bool thumbLoading = false;
+  // final apiDbName = 'garo_test_1';
+  // final apiDbName = 'garo_test_android10';
+  final apiDbName = 'garo_test_phone';
+  double indexingFrac = 0.0;
+  String indexingText = '';
+  bool isIndexing = false;
+  String rootPath = '';
 
   List<String> photoPaths = [];
-  List<String> thumbPaths = [];
+  List<bool> indexStat = [];
 
-  void _incrementCounter() {
-    _getStoragePermission(true);
+  final TextEditingController _searchTextController = TextEditingController();
+
+  @override
+  void dispose() {
+    // Clean up the controller when the widget is disposed.
+    _searchTextController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _displayTextInputDialog(BuildContext context) async {
+    return showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Semantic Search'),
+          content: TextField(
+            controller: _searchTextController,
+            decoration:
+                const InputDecoration(hintText: "Description of the image"),
+          ),
+          actions: <Widget>[
+            MaterialButton(
+              child: const Text('CANCEL'),
+              onPressed: () {
+                Navigator.pop(context);
+              },
+            ),
+            MaterialButton(
+              child: const Text('SEARCH'),
+              onPressed: () {
+                _searchAPI(_searchTextController.text);
+                Navigator.pop(context);
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _updateData() {
+    _loadImagesData(true);
     // setState(() {
     //   _counter++;
     //   print("counter - " + _counter.toString());
@@ -83,10 +130,10 @@ class _MyHomePageState extends State<MyHomePage> {
     super.initState();
     localImageProvider =
         LocalImageProvider(photoPaths: photoPaths, initialIndex: 0);
-    _getStoragePermission(false);
+    _loadImagesData(false);
   }
 
-  void _getStoragePermission(generateNewThumbnails) async {
+  void _loadImagesData(bool runIndexing) async {
     if (Platform.isAndroid) {
       if (await Permission.storage.request().isGranted |
           await Permission.photos.request().isGranted) {
@@ -96,18 +143,17 @@ class _MyHomePageState extends State<MyHomePage> {
         final storageRoot = extDir?.parent.parent.parent.parent;
 
         if (extDir != null && storageRoot != null) {
-          final thumbsRootPath = dart_path.join(extDir.path, '.thumbnails');
+          final idxRootPath = dart_path.join(extDir.path, '.indices');
 
-          final rootPath = storageRoot.path;
+          rootPath = storageRoot.path;
           developer.log((rootPath).toString(), name: 'com.etchandgear.garo');
 
           photoPaths.clear();
-          thumbPaths.clear();
 
           for (var ff in [
-            Directory(dart_path.join(rootPath, 'Pictures')),
+            // Directory(dart_path.join(rootPath, 'Pictures')),
             Directory(dart_path.join(rootPath, 'DCIM', 'Camera')),
-            Directory(dart_path.join(rootPath, 'Download'))
+            // Directory(dart_path.join(rootPath, 'Download'))
           ]) {
             if (ff.existsSync()) {
               for (var filePath in ff.listSync(recursive: false)) {
@@ -127,75 +173,108 @@ class _MyHomePageState extends State<MyHomePage> {
             }
           }
 
-          // create thumbnails, if needed
-          thumbLoading = true;
-          var loadedCount = 0;
+          // add indices wherever needed
+          isIndexing = true;
+          var indexedCount = 0;
           for (var photoPth in photoPaths) {
-            final thumbPath = dart_path.join(
-                thumbsRootPath, photoPth.substring(rootPath.length + 1));
-            if (File(thumbPath).existsSync()) {
-              thumbPaths.add(thumbPath);
-            } else if (generateNewThumbnails){
-              final thumbPathDir = Directory(dart_path.dirname(thumbPath));
-              if (!thumbPathDir.existsSync()) {
-                thumbPathDir.createSync(recursive: true);
+            final noRootPhotoPth = photoPth.substring(rootPath.length + 1);
+            final touchPath = dart_path.join(idxRootPath, noRootPhotoPth);
+            if (File(touchPath).existsSync()) {
+              indexStat.add(true);
+            } else if (runIndexing) {
+              final idxPathDir = Directory(dart_path.dirname(touchPath));
+              if (!idxPathDir.existsSync()) {
+                idxPathDir.createSync(recursive: true);
               }
 
-              final cmd = img.Command()
-                // Decode the image file at the given path
-                ..decodeImageFile(photoPth)
-                // Resize the image to a width of 64 pixels and a height that maintains the aspect ratio of the original.
-                ..copyResize(width: 128)
-                // Write the image to a PNG file (determined by the suffix of the file path).
-                ..writeToFile(thumbPath);
-              // On platforms that support Isolates, execute the image commands asynchronously on an isolate thread.
-              // Otherwise, the commands will be executed synchronously.
-              await cmd.executeThread();
-              thumbPaths.add(thumbPath);
+              var url = Uri.http('192.168.0.110:8000', 'index/');
+              // var response = await http
+              //     .post(url, body: {'db_name': apiDbName, 'file_path': filePath});
+
+              // thanks to https://stackoverflow.com/a/49378249, https://stackoverflow.com/a/57958447
+              var request = http.MultipartRequest("POST", url);
+              request.fields['db_name'] = apiDbName;
+              request.fields['file_path'] = noRootPhotoPth;
+              request.files
+                  .add(await http.MultipartFile.fromPath('file', photoPth));
+              var streamedResponse = await request.send();
+              var response = await http.Response.fromStream(streamedResponse);
+              developer.log('Response status: ${response.statusCode}',
+                  name: 'com.etchandgear.garo');
+              developer.log('Response body: ${response.body}',
+                  name: 'com.etchandgear.garo');
+              if (response.statusCode == 200) {
+                File(touchPath).createSync();
+                indexStat.add(true);
+              } else {
+                indexStat.add(false);
+              }
+            } else {
+              indexStat.add(false);
             }
 
             setState(() {
               // localImageProvider.photoPaths.add(photoPaths[loadedCount]);
-              loadedCount++;
-              thumbLoadingFrac = loadedCount / photoPaths.length;
-              thumbLoadingText =
-                  'Generating thumbnails - $loadedCount of ${photoPaths.length}';
-              developer.log("completed $thumbLoadingFrac fraction",
+              indexedCount++;
+              indexingFrac = indexedCount / photoPaths.length;
+              indexingText =
+                  'Indexing images - $indexedCount of ${photoPaths.length}';
+              developer.log("indexed $indexingFrac fraction of total images",
                   name: 'com.etchandgear.garo');
             });
           }
         }
 
         setState(() {
-          thumbLoading = false;
-          // photoPaths = [
-          //   '/storage/emulated/0/DCIM/Camera/IMG_20240226_222211.jpg',
-          //   '/storage/emulated/0/Download/20240313_185828.jpg',
-          //   '/storage/emulated/0/Download/IMG_0011.JPG',
-          //   '/storage/emulated/0/Download/IMG_0007.JPG',
-          //   // '/storage/emulated/0/Download/IMG_0005.JPG',
-          //   '/storage/emulated/0/Download/IMG_0001.JPG',
-          //   '/storage/emulated/0/Download/gsmarena_045.jpeg',
-          //   '/storage/emulated/0/Download/gsmarena_024.jpeg',
-          //   '/storage/emulated/0/Download/gsmarena_022.jpeg',
-          //   '/storage/emulated/0/Download/20220924_17560.jpg'
-          // ];
-
-          // localImageProvider =
-          //     LocalImageProvider(photoPaths: photoPaths, initialIndex: 0);
+          isIndexing = false;
         });
       }
     }
   }
 
+  void _searchAPI(String queryStr) async {
+    developer.log(queryStr, name: 'com.etchandgear.garo');
+    var url = Uri.http('192.168.0.110:8000', 'search/');
+
+    var response = await http.post(url,
+        body: jsonEncode({
+          'db_name': apiDbName,
+          'query_string': queryStr,
+          // 'search_path': 'Download'
+          'search_path': 'DCIM/Camera'
+        }),
+        headers: {
+          'Content-type': 'application/json',
+          'Accept': 'application/json',
+        });
+
+    // var request = http.MultipartRequest("POST", url);
+    // request.fields['db_name'] = apiDbName;
+    // request.fields['query_string'] = queryStr;
+    // request.fields['search_path'] = 'Download';
+    // var streamedResponse = await request.send();
+    // var response = await http.Response.fromStream(streamedResponse);
+
+    developer.log('Response status: ${response.statusCode}',
+        name: 'com.etchandgear.garo');
+    developer.log('Response body: ${response.body}',
+        name: 'com.etchandgear.garo');
+    // developer.log('search results: ${jsonDecode(response.body)['results']}',
+    //     name: 'com.etchandgear.garo');
+    photoPaths.clear();
+
+    for (var resPth in jsonDecode(response.body)['results']) {
+      developer.log(resPth, name: 'com.etchandgear.garo');
+      photoPaths.add(dart_path.join(rootPath, resPth.toString()));
+    }
+    // photoPaths.addAll();
+    if (response.statusCode == 200) {
+      setState(() {});
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
         // TRY THIS: Try changing the color here to a specific color (to
@@ -206,7 +285,7 @@ class _MyHomePageState extends State<MyHomePage> {
         // the App.build method, and use it to set our appbar title.
         title: Text(widget.title),
       ),
-      body: thumbLoading
+      body: isIndexing
           ? Dialog(
               child: Padding(
                 padding: const EdgeInsets.all(8.0),
@@ -214,11 +293,11 @@ class _MyHomePageState extends State<MyHomePage> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      thumbLoadingText,
+                      indexingText,
                       style: const TextStyle(fontSize: 16),
                     ),
                     const SizedBox(height: 10),
-                    LinearProgressIndicator(value: thumbLoadingFrac),
+                    LinearProgressIndicator(value: indexingFrac),
                     const SizedBox(height: 20),
                   ],
                 ),
@@ -239,21 +318,35 @@ class _MyHomePageState extends State<MyHomePage> {
                   padding: const EdgeInsets.all(0.5),
                   child: InkWell(
                     onTap: () => _openImage(index),
-                    child: index < thumbPaths.length
+                    child: index < photoPaths.length
                         ? Image.file(
-                            File(thumbPaths[index]),
+                            File(photoPaths[index]),
                             fit: BoxFit.cover,
+                            cacheWidth: 300,
+                            isAntiAlias: true,
                           )
                         : Image.asset("assets/images/placeholder.png"),
                   ),
                 );
               }),
             ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Refresh',
-        child: const Icon(Icons.sync),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
+      // floatingActionButton: FloatingActionButton(
+      //   onPressed: _updateData,
+      //   tooltip: 'Refresh',
+      //   child: const Icon(Icons.sync),
+      // ),
+      bottomNavigationBar: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          IconButton(onPressed: _updateData, icon: const Icon(Icons.sync)),
+          IconButton(
+              onPressed: () {
+                _searchTextController.clear();
+                _displayTextInputDialog(context);
+              },
+              icon: const Icon(Icons.search)),
+        ],
+      ),
     );
   }
 }
