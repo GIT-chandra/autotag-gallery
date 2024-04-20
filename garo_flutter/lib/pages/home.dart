@@ -9,7 +9,26 @@ import 'package:path/path.dart' as dart_path;
 import 'dart:developer' as developer;
 import 'package:http/http.dart' as http;
 
+import 'package:flutter/services.dart';
+import 'package:google_mlkit_image_labeling/google_mlkit_image_labeling.dart';
+
 // 192.168.0.110:8000/
+
+Future<String> getAssetPath(String asset) async {
+  final path = await getLocalPath(asset);
+  await Directory(dart_path.dirname(path)).create(recursive: true);
+  final file = File(path);
+  if (!await file.exists()) {
+    final byteData = await rootBundle.load(asset);
+    await file.writeAsBytes(byteData.buffer
+        .asUint8List(byteData.offsetInBytes, byteData.lengthInBytes));
+  }
+  return file.path;
+}
+
+Future<String> getLocalPath(String path) async {
+  return '${(await getApplicationSupportDirectory()).path}/$path';
+}
 
 class LocalImageProvider extends EasyImageProvider {
   final List<String> photoPaths;
@@ -97,7 +116,8 @@ class _MyHomePageState extends State<MyHomePage> {
             MaterialButton(
               child: const Text('SEARCH'),
               onPressed: () {
-                _searchAPI(_searchTextController.text);
+                // _searchAPI(_searchTextController.text);
+                _processImage(_searchTextController.text);
                 Navigator.pop(context);
               },
             ),
@@ -128,9 +148,39 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
+    _initializeLabeler();
     localImageProvider =
         LocalImageProvider(photoPaths: photoPaths, initialIndex: 0);
     _loadImagesData(false);
+  }
+
+  void _initializeLabeler() async {
+    // uncomment next line if you want to use the default model
+    _imageLabeler = ImageLabeler(options: ImageLabelerOptions());
+
+    // NOTE: default model is slower but works better - 
+    //    has 400+ classes, which seems to be higher that this local file
+    
+    // uncomment next lines if you want to use a local model
+    // const path = 'assets/ml/object_labeler.tflite';
+    // final modelPath = await getAssetPath(path);
+    // final options = LocalLabelerOptions(modelPath: modelPath);
+    // _imageLabeler = ImageLabeler(options: options);
+  }
+
+  late ImageLabeler _imageLabeler;
+
+  Future<void> _processImage(String strIdx) async {
+    final imgPath = photoPaths[int.parse(strIdx)];
+    final labels =
+        await _imageLabeler.processImage(InputImage.fromFilePath(imgPath));
+    String text = 'Labels found: ${labels.length}\n\n';
+    for (final label in labels) {
+      text += 'Label: ${label.label}, '
+          'Confidence: ${label.confidence.toStringAsFixed(2)}\n\n';
+    }
+    developer.log('image: $imgPath, result: $text',
+        name: 'com.etchandgear.garo');
   }
 
   void _loadImagesData(bool runIndexing) async {
@@ -152,8 +202,8 @@ class _MyHomePageState extends State<MyHomePage> {
 
           for (var ff in [
             // Directory(dart_path.join(rootPath, 'Pictures')),
-            Directory(dart_path.join(rootPath, 'DCIM', 'Camera')),
-            // Directory(dart_path.join(rootPath, 'Download'))
+            // Directory(dart_path.join(rootPath, 'DCIM', 'Camera')),
+            Directory(dart_path.join(rootPath, 'Download'))
           ]) {
             if (ff.existsSync()) {
               for (var filePath in ff.listSync(recursive: false)) {
@@ -177,40 +227,44 @@ class _MyHomePageState extends State<MyHomePage> {
           isIndexing = true;
           var indexedCount = 0;
           for (var photoPth in photoPaths) {
-            final noRootPhotoPth = photoPth.substring(rootPath.length + 1);
-            final touchPath = dart_path.join(idxRootPath, noRootPhotoPth);
-            if (File(touchPath).existsSync()) {
-              indexStat.add(true);
-            } else if (runIndexing) {
-              final idxPathDir = Directory(dart_path.dirname(touchPath));
-              if (!idxPathDir.existsSync()) {
-                idxPathDir.createSync(recursive: true);
-              }
+            // final noRootPhotoPth = photoPth.substring(rootPath.length + 1);
+            // final touchPath = dart_path.join(idxRootPath, noRootPhotoPth);
+            // if (File(touchPath).existsSync()) {
+            //   indexStat.add(true);
+            // } else if (runIndexing) {
+            //   final idxPathDir = Directory(dart_path.dirname(touchPath));
+            //   if (!idxPathDir.existsSync()) {
+            //     idxPathDir.createSync(recursive: true);
+            //   }
 
-              var url = Uri.http('192.168.0.110:8000', 'index/');
-              // var response = await http
-              //     .post(url, body: {'db_name': apiDbName, 'file_path': filePath});
+            //   var url = Uri.http('192.168.0.110:8000', 'index/');
+            //   // var response = await http
+            //   //     .post(url, body: {'db_name': apiDbName, 'file_path': filePath});
 
-              // thanks to https://stackoverflow.com/a/49378249, https://stackoverflow.com/a/57958447
-              var request = http.MultipartRequest("POST", url);
-              request.fields['db_name'] = apiDbName;
-              request.fields['file_path'] = noRootPhotoPth;
-              request.files
-                  .add(await http.MultipartFile.fromPath('file', photoPth));
-              var streamedResponse = await request.send();
-              var response = await http.Response.fromStream(streamedResponse);
-              developer.log('Response status: ${response.statusCode}',
-                  name: 'com.etchandgear.garo');
-              developer.log('Response body: ${response.body}',
-                  name: 'com.etchandgear.garo');
-              if (response.statusCode == 200) {
-                File(touchPath).createSync();
-                indexStat.add(true);
-              } else {
-                indexStat.add(false);
-              }
-            } else {
-              indexStat.add(false);
+            //   // thanks to https://stackoverflow.com/a/49378249, https://stackoverflow.com/a/57958447
+            //   var request = http.MultipartRequest("POST", url);
+            //   request.fields['db_name'] = apiDbName;
+            //   request.fields['file_path'] = noRootPhotoPth;
+            //   request.files
+            //       .add(await http.MultipartFile.fromPath('file', photoPth));
+            //   var streamedResponse = await request.send();
+            //   var response = await http.Response.fromStream(streamedResponse);
+            //   developer.log('Response status: ${response.statusCode}',
+            //       name: 'com.etchandgear.garo');
+            //   developer.log('Response body: ${response.body}',
+            //       name: 'com.etchandgear.garo');
+            //   if (response.statusCode == 200) {
+            //     File(touchPath).createSync();
+            //     indexStat.add(true);
+            //   } else {
+            //     indexStat.add(false);
+            //   }
+            // } else {
+            //   indexStat.add(false);
+            // }
+
+            if (runIndexing) {
+              await _processImage(indexedCount.toString());
             }
 
             setState(() {
