@@ -1,72 +1,13 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'dart:io';
-import 'package:easy_image_viewer/easy_image_viewer.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as dart_path;
 import 'dart:developer' as developer;
-import 'package:http/http.dart' as http;
-
-import 'package:flutter/services.dart';
 import 'package:google_mlkit_image_labeling/google_mlkit_image_labeling.dart';
-
-// 192.168.0.110:8000/
-
-Future<String> getAssetPath(String asset) async {
-  final path = await getLocalPath(asset);
-  await Directory(dart_path.dirname(path)).create(recursive: true);
-  final file = File(path);
-  if (!await file.exists()) {
-    final byteData = await rootBundle.load(asset);
-    await file.writeAsBytes(byteData.buffer
-        .asUint8List(byteData.offsetInBytes, byteData.lengthInBytes));
-  }
-  return file.path;
-}
-
-Future<String> getLocalPath(String path) async {
-  return '${(await getApplicationSupportDirectory()).path}/$path';
-}
-
-class LocalImageProvider extends EasyImageProvider {
-  final List<String> photoPaths;
-  int initialIndex;
-
-  LocalImageProvider({required this.photoPaths, this.initialIndex = 0});
-
-  @override
-  ImageProvider<Object> imageBuilder(BuildContext context, int index) {
-    String? localImagePath = photoPaths[index];
-    File? imageFile;
-
-    if (localImagePath != null) {
-      imageFile = File(localImagePath);
-    }
-
-    ImageProvider imageProvider = imageFile != null
-        ? FileImage(imageFile)
-        : const AssetImage("assets/images/placeholder.png") as ImageProvider;
-
-    return imageProvider;
-  }
-
-  @override
-  int get imageCount => photoPaths.length;
-}
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
 
   final String title;
 
@@ -75,9 +16,6 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  // final apiDbName = 'garo_test_1';
-  // final apiDbName = 'garo_test_android10';
-  final apiDbName = 'garo_test_phone';
   double indexingFrac = 0.0;
   String indexingText = '';
   bool isIndexing = false;
@@ -87,6 +25,7 @@ class _MyHomePageState extends State<MyHomePage> {
   List<bool> indexStat = [];
 
   final TextEditingController _searchTextController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void dispose() {
@@ -117,7 +56,22 @@ class _MyHomePageState extends State<MyHomePage> {
               child: const Text('SEARCH'),
               onPressed: () {
                 // _searchAPI(_searchTextController.text);
-                _processImage(_searchTextController.text);
+                developer.log(
+                    "imageCache.liveImageCount ${imageCache.liveImageCount.toString()}",
+                    name: 'com.etchandgear.garo');
+                developer.log(
+                    "imageCache.currentSizeBytes ${imageCache.currentSizeBytes.toString()}",
+                    name: 'com.etchandgear.garo');
+                developer.log(
+                    "imageCache.maximumSizeBytes ${imageCache.maximumSizeBytes.toString()}",
+                    name: 'com.etchandgear.garo');
+                developer.log(
+                    "imageCache.currentSize ${imageCache.currentSize.toString()}",
+                    name: 'com.etchandgear.garo');
+                developer.log(
+                    "imageCache.maximumSize ${imageCache.maximumSize.toString()}",
+                    name: 'com.etchandgear.garo');
+                // _processImage(_searchTextController.text);
                 Navigator.pop(context);
               },
             ),
@@ -129,28 +83,18 @@ class _MyHomePageState extends State<MyHomePage> {
 
   void _updateData() {
     _loadImagesData(true);
-    // setState(() {
-    //   _counter++;
-    //   print("counter - " + _counter.toString());
-    // });
   }
 
   void _openImage(int idx) {
-    localImageProvider.initialIndex = idx;
-    showImageViewerPager(context, localImageProvider, onPageChanged: (page) {
-      print("page changed to $page");
-    }, onViewerDismissed: (page) {
-      print("dismissed while on page $page");
-    }, doubleTapZoomable: false, swipeDismissible: false);
+    developer.log("opening image ${photoPaths[idx]}",
+        name: 'com.etchandgear.garo');
+    // TODO
   }
 
-  late final LocalImageProvider localImageProvider;
   @override
   void initState() {
     super.initState();
     _initializeLabeler();
-    localImageProvider =
-        LocalImageProvider(photoPaths: photoPaths, initialIndex: 0);
     _loadImagesData(false);
   }
 
@@ -158,14 +102,8 @@ class _MyHomePageState extends State<MyHomePage> {
     // uncomment next line if you want to use the default model
     _imageLabeler = ImageLabeler(options: ImageLabelerOptions());
 
-    // NOTE: default model is slower but works better - 
-    //    has 400+ classes, which seems to be higher that this local file
-    
-    // uncomment next lines if you want to use a local model
-    // const path = 'assets/ml/object_labeler.tflite';
-    // final modelPath = await getAssetPath(path);
-    // final options = LocalLabelerOptions(modelPath: modelPath);
-    // _imageLabeler = ImageLabeler(options: options);
+    // NOTE: default model is slower but works better -
+    //    has 400+ classes, which seems to be higher that the local file from plugin example
   }
 
   late ImageLabeler _imageLabeler;
@@ -202,7 +140,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
           for (var ff in [
             // Directory(dart_path.join(rootPath, 'Pictures')),
-            // Directory(dart_path.join(rootPath, 'DCIM', 'Camera')),
+            Directory(dart_path.join(rootPath, 'DCIM', 'Camera')),
             Directory(dart_path.join(rootPath, 'Download'))
           ]) {
             if (ff.existsSync()) {
@@ -218,6 +156,16 @@ class _MyHomePageState extends State<MyHomePage> {
                   developer.log((filePath.path).toString(),
                       name: 'com.etchandgear.garo');
                   photoPaths.add(filePath.path);
+
+                  // if (mounted &&
+                  //     imageCache.currentSizeBytes <
+                  //         (imageCache.maximumSizeBytes - 1024 * 1024)) {
+                  //   // precacheImage(
+                  //   //     Image.file(File('some/path')) as ImageProvider, context,
+                  //   //     size: const Size.fromWidth(192));
+                  //   precacheImage(FileImage(File(filePath.path)), context);
+                  //   developer.log("PRE-CACHING", name: 'com.etchandgear.garo');
+                  // }
                 }
               }
             }
@@ -227,42 +175,6 @@ class _MyHomePageState extends State<MyHomePage> {
           isIndexing = true;
           var indexedCount = 0;
           for (var photoPth in photoPaths) {
-            // final noRootPhotoPth = photoPth.substring(rootPath.length + 1);
-            // final touchPath = dart_path.join(idxRootPath, noRootPhotoPth);
-            // if (File(touchPath).existsSync()) {
-            //   indexStat.add(true);
-            // } else if (runIndexing) {
-            //   final idxPathDir = Directory(dart_path.dirname(touchPath));
-            //   if (!idxPathDir.existsSync()) {
-            //     idxPathDir.createSync(recursive: true);
-            //   }
-
-            //   var url = Uri.http('192.168.0.110:8000', 'index/');
-            //   // var response = await http
-            //   //     .post(url, body: {'db_name': apiDbName, 'file_path': filePath});
-
-            //   // thanks to https://stackoverflow.com/a/49378249, https://stackoverflow.com/a/57958447
-            //   var request = http.MultipartRequest("POST", url);
-            //   request.fields['db_name'] = apiDbName;
-            //   request.fields['file_path'] = noRootPhotoPth;
-            //   request.files
-            //       .add(await http.MultipartFile.fromPath('file', photoPth));
-            //   var streamedResponse = await request.send();
-            //   var response = await http.Response.fromStream(streamedResponse);
-            //   developer.log('Response status: ${response.statusCode}',
-            //       name: 'com.etchandgear.garo');
-            //   developer.log('Response body: ${response.body}',
-            //       name: 'com.etchandgear.garo');
-            //   if (response.statusCode == 200) {
-            //     File(touchPath).createSync();
-            //     indexStat.add(true);
-            //   } else {
-            //     indexStat.add(false);
-            //   }
-            // } else {
-            //   indexStat.add(false);
-            // }
-
             if (runIndexing) {
               await _processImage(indexedCount.toString());
             }
@@ -288,43 +200,6 @@ class _MyHomePageState extends State<MyHomePage> {
 
   void _searchAPI(String queryStr) async {
     developer.log(queryStr, name: 'com.etchandgear.garo');
-    var url = Uri.http('192.168.0.110:8000', 'search/');
-
-    var response = await http.post(url,
-        body: jsonEncode({
-          'db_name': apiDbName,
-          'query_string': queryStr,
-          // 'search_path': 'Download'
-          'search_path': 'DCIM/Camera'
-        }),
-        headers: {
-          'Content-type': 'application/json',
-          'Accept': 'application/json',
-        });
-
-    // var request = http.MultipartRequest("POST", url);
-    // request.fields['db_name'] = apiDbName;
-    // request.fields['query_string'] = queryStr;
-    // request.fields['search_path'] = 'Download';
-    // var streamedResponse = await request.send();
-    // var response = await http.Response.fromStream(streamedResponse);
-
-    developer.log('Response status: ${response.statusCode}',
-        name: 'com.etchandgear.garo');
-    developer.log('Response body: ${response.body}',
-        name: 'com.etchandgear.garo');
-    // developer.log('search results: ${jsonDecode(response.body)['results']}',
-    //     name: 'com.etchandgear.garo');
-    photoPaths.clear();
-
-    for (var resPth in jsonDecode(response.body)['results']) {
-      developer.log(resPth, name: 'com.etchandgear.garo');
-      photoPaths.add(dart_path.join(rootPath, resPth.toString()));
-    }
-    // photoPaths.addAll();
-    if (response.statusCode == 200) {
-      setState(() {});
-    }
   }
 
   @override
@@ -357,32 +232,41 @@ class _MyHomePageState extends State<MyHomePage> {
                 ),
               ),
             )
-          : GridView.builder(
-              shrinkWrap: true,
-              physics: const BouncingScrollPhysics(
-                parent: AlwaysScrollableScrollPhysics(),
-              ),
-              padding: const EdgeInsets.all(1),
-              itemCount: photoPaths.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-              ),
-              itemBuilder: ((context, index) {
-                return Container(
-                  padding: const EdgeInsets.all(0.5),
-                  child: InkWell(
+          : Scrollbar(
+              thickness: 15.0,
+              radius: const Radius.elliptical(4, 6),
+              interactive: true,
+              thumbVisibility: false,
+              controller: _scrollController,
+              child: GridView.builder(
+                controller: _scrollController,
+                shrinkWrap: true,
+                physics: const BouncingScrollPhysics(
+                  parent: AlwaysScrollableScrollPhysics(),
+                ),
+                padding: const EdgeInsets.all(6),
+                itemCount: photoPaths.length,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  crossAxisSpacing: 2,
+                  mainAxisSpacing: 2,
+                ),
+                itemBuilder: ((context, index) {
+                  return Card(
+                    margin: const EdgeInsets.all(2.0),
+                      child: InkWell(
                     onTap: () => _openImage(index),
                     child: index < photoPaths.length
                         ? Image.file(
                             File(photoPaths[index]),
                             fit: BoxFit.cover,
-                            cacheWidth: 300,
+                            cacheWidth: 192,
                             isAntiAlias: true,
                           )
                         : Image.asset("assets/images/placeholder.png"),
-                  ),
-                );
-              }),
+                  ));
+                }),
+              ),
             ),
       // floatingActionButton: FloatingActionButton(
       //   onPressed: _updateData,
