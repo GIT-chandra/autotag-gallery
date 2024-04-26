@@ -22,6 +22,7 @@ class _MyHomePageState extends State<MyHomePage> {
   String indexingText = '';
   bool isIndexing = false;
   String rootPath = '';
+  late Text titleWidget;
 
   List<String> photoPaths = [];
   List<bool> indexStat = [];
@@ -43,11 +44,10 @@ class _MyHomePageState extends State<MyHomePage> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Semantic Search'),
+          title: const Text('Search using Tags'),
           content: TextField(
             controller: _searchTextController,
-            decoration:
-                const InputDecoration(hintText: "Description of the image"),
+            decoration: const InputDecoration(hintText: "Image Tag"),
           ),
           actions: <Widget>[
             MaterialButton(
@@ -59,33 +59,15 @@ class _MyHomePageState extends State<MyHomePage> {
             MaterialButton(
               child: const Text('SEARCH'),
               onPressed: () {
-                _searchAPI(_searchTextController.text.toLowerCase());
-                // developer.log(
-                //     "imageCache.liveImageCount ${imageCache.liveImageCount.toString()}",
-                //     name: 'com.etchandgear.garo');
-                // developer.log(
-                //     "imageCache.currentSizeBytes ${imageCache.currentSizeBytes.toString()}",
-                //     name: 'com.etchandgear.garo');
-                // developer.log(
-                //     "imageCache.maximumSizeBytes ${imageCache.maximumSizeBytes.toString()}",
-                //     name: 'com.etchandgear.garo');
-                // developer.log(
-                //     "imageCache.currentSize ${imageCache.currentSize.toString()}",
-                //     name: 'com.etchandgear.garo');
-                // developer.log(
-                //     "imageCache.maximumSize ${imageCache.maximumSize.toString()}",
-                //     name: 'com.etchandgear.garo');
                 Navigator.pop(context);
+                // return _searchAPI(_searchTextController.text.toLowerCase());
+                _searchAPI(_searchTextController.text.toLowerCase());
               },
             ),
           ],
         );
       },
     );
-  }
-
-  void _updateData() {
-    _loadImagesData(true);
   }
 
   void _openImage(int idx) {
@@ -97,6 +79,7 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
+    titleWidget = Text(widget.title);
     _initializeLabeler();
     _loadImagesData(false);
   }
@@ -252,10 +235,39 @@ class _MyHomePageState extends State<MyHomePage> {
           .compareTo(globalScores[queryStr]?[b] as double));
       // developer.log(resultPaths.toString(), name: 'com.etchandgear.garo');
       setState(() {
+        titleWidget = Text('${resultPaths.length} results for "$queryStr"');
         for (final resPth in resultPaths) {
           photoPaths.add(dart_path.join(rootPath, resPth));
         }
       });
+    } else {
+      setState(() {
+        titleWidget = Text('No results for "$queryStr"!');
+        photoPaths.clear();
+      });
+      // return showDialog<void>(
+      //   context: context,
+      //   builder: (BuildContext context) {
+      //     return AlertDialog(
+      //       title: const Text('Not found'),
+      //       content: Text(
+      //         'No results found for tag "$queryStr"\n'
+      //         'Please try with other tags.',
+      //       ),
+      //       actions: <Widget>[
+      //         TextButton(
+      //           style: TextButton.styleFrom(
+      //             textStyle: Theme.of(context).textTheme.labelLarge,
+      //           ),
+      //           child: const Text('Close'),
+      //           onPressed: () {
+      //             Navigator.of(context).pop();
+      //           },
+      //         ),
+      //       ],
+      //     );
+      //   },
+      // );
     }
   }
 
@@ -269,7 +281,7 @@ class _MyHomePageState extends State<MyHomePage> {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         // Here we take the value from the MyHomePage object that was created by
         // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        title: titleWidget,
       ),
       body: isIndexing
           ? Dialog(
@@ -330,18 +342,38 @@ class _MyHomePageState extends State<MyHomePage> {
       //   tooltip: 'Refresh',
       //   child: const Icon(Icons.sync),
       // ),
-      bottomNavigationBar: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          IconButton(onPressed: _updateData, icon: const Icon(Icons.sync)),
-          IconButton(
-              onPressed: () {
-                _searchTextController.clear();
-                _displayTextInputDialog(context);
-              },
-              icon: const Icon(Icons.search)),
-        ],
-      ),
+      bottomNavigationBar: isIndexing
+          ? Container(
+              padding: const EdgeInsets.all(5.0),
+              child: const Text("Please wait..."),
+            )
+          : Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                IconButton(
+                    onPressed: () {
+                      titleWidget = Text(widget.title);
+                      _loadImagesData(true);
+                    },
+                    icon: const Icon(Icons.sync)),
+                IconButton(
+                    onPressed: () {
+                      titleWidget = Text(widget.title);
+                      _loadImagesData(false);
+                      _scrollController.animateTo(
+                          _scrollController.position.minScrollExtent,
+                          duration: Durations.long1,
+                          curve: Curves.fastOutSlowIn);
+                    },
+                    icon: const Icon(Icons.home)),
+                IconButton(
+                    onPressed: () {
+                      _searchTextController.clear();
+                      _displayTextInputDialog(context);
+                    },
+                    icon: const Icon(Icons.search)),
+              ],
+            ),
     );
   }
 }
