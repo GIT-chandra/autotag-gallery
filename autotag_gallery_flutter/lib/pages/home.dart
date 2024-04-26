@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
@@ -27,6 +29,8 @@ class _MyHomePageState extends State<MyHomePage> {
   final TextEditingController _searchTextController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
+  final Map<String, Map<String, double>> globalScores = {};
+
   @override
   void dispose() {
     // Clean up the controller when the widget is disposed.
@@ -55,23 +59,22 @@ class _MyHomePageState extends State<MyHomePage> {
             MaterialButton(
               child: const Text('SEARCH'),
               onPressed: () {
-                // _searchAPI(_searchTextController.text);
-                developer.log(
-                    "imageCache.liveImageCount ${imageCache.liveImageCount.toString()}",
-                    name: 'com.etchandgear.garo');
-                developer.log(
-                    "imageCache.currentSizeBytes ${imageCache.currentSizeBytes.toString()}",
-                    name: 'com.etchandgear.garo');
-                developer.log(
-                    "imageCache.maximumSizeBytes ${imageCache.maximumSizeBytes.toString()}",
-                    name: 'com.etchandgear.garo');
-                developer.log(
-                    "imageCache.currentSize ${imageCache.currentSize.toString()}",
-                    name: 'com.etchandgear.garo');
-                developer.log(
-                    "imageCache.maximumSize ${imageCache.maximumSize.toString()}",
-                    name: 'com.etchandgear.garo');
-                // _processImage(_searchTextController.text);
+                _searchAPI(_searchTextController.text.toLowerCase());
+                // developer.log(
+                //     "imageCache.liveImageCount ${imageCache.liveImageCount.toString()}",
+                //     name: 'com.etchandgear.garo');
+                // developer.log(
+                //     "imageCache.currentSizeBytes ${imageCache.currentSizeBytes.toString()}",
+                //     name: 'com.etchandgear.garo');
+                // developer.log(
+                //     "imageCache.maximumSizeBytes ${imageCache.maximumSizeBytes.toString()}",
+                //     name: 'com.etchandgear.garo');
+                // developer.log(
+                //     "imageCache.currentSize ${imageCache.currentSize.toString()}",
+                //     name: 'com.etchandgear.garo');
+                // developer.log(
+                //     "imageCache.maximumSize ${imageCache.maximumSize.toString()}",
+                //     name: 'com.etchandgear.garo');
                 Navigator.pop(context);
               },
             ),
@@ -108,8 +111,8 @@ class _MyHomePageState extends State<MyHomePage> {
 
   late ImageLabeler _imageLabeler;
 
-  Future<void> _processImage(String strIdx) async {
-    final imgPath = photoPaths[int.parse(strIdx)];
+  Future<List<ImageLabel>> _processImage(int idx) async {
+    final imgPath = photoPaths[idx];
     final labels =
         await _imageLabeler.processImage(InputImage.fromFilePath(imgPath));
     String text = 'Labels found: ${labels.length}\n\n';
@@ -119,6 +122,7 @@ class _MyHomePageState extends State<MyHomePage> {
     }
     developer.log('image: $imgPath, result: $text',
         name: 'com.etchandgear.garo');
+    return labels;
   }
 
   void _loadImagesData(bool runIndexing) async {
@@ -174,9 +178,46 @@ class _MyHomePageState extends State<MyHomePage> {
           // add indices wherever needed
           isIndexing = true;
           var indexedCount = 0;
+
+          globalScores.clear();
           for (var photoPth in photoPaths) {
-            if (runIndexing) {
-              await _processImage(indexedCount.toString());
+            final noRootPhotoPth = photoPth.substring(rootPath.length + 1);
+            final touchPath = dart_path.join(idxRootPath, noRootPhotoPth);
+            final touchFile = File(touchPath);
+            if (touchFile.existsSync()) {
+              final rawDataStr = touchFile.readAsStringSync();
+              // developer.log("reading existing data - $rawDataStr",
+              //     name: 'com.etchandgear.garo');
+
+              final labelsData = jsonDecode(rawDataStr) as Map<String, dynamic>;
+
+              labelsData.forEach((key, value) {
+                final cleanKey = key.toLowerCase();
+                if (!globalScores.containsKey(cleanKey)) {
+                  globalScores[cleanKey] = {};
+                }
+                globalScores[cleanKey]?[noRootPhotoPth] = value as double;
+              });
+
+              indexStat.add(true);
+            } else if (runIndexing) {
+              final idxPathDir = Directory(dart_path.dirname(touchPath));
+              if (!idxPathDir.existsSync()) {
+                idxPathDir.createSync(recursive: true);
+              }
+
+              final labels = await _processImage(indexedCount);
+              final Map<String, double> labelsData = {};
+              for (final label in labels) {
+                labelsData[label.label] = label.confidence.toDouble();
+                // text += 'Label: ${label.label}, '
+                //     'Confidence: ${label.confidence.toStringAsFixed(2)}\n\n';
+              }
+              touchFile.writeAsStringSync(jsonEncode(labelsData));
+
+              indexStat.add(true);
+            } else {
+              indexStat.add(false);
             }
 
             setState(() {
@@ -185,10 +226,11 @@ class _MyHomePageState extends State<MyHomePage> {
               indexingFrac = indexedCount / photoPaths.length;
               indexingText =
                   'Indexing images - $indexedCount of ${photoPaths.length}';
-              developer.log("indexed $indexingFrac fraction of total images",
-                  name: 'com.etchandgear.garo');
+              // developer.log("indexed $indexingFrac fraction of total images",
+              //     name: 'com.etchandgear.garo');
             });
           }
+          developer.log(globalScores.toString(), name: 'com.etchandgear.garo');
         }
 
         setState(() {
@@ -200,6 +242,21 @@ class _MyHomePageState extends State<MyHomePage> {
 
   void _searchAPI(String queryStr) async {
     developer.log(queryStr, name: 'com.etchandgear.garo');
+
+    if (globalScores.containsKey(queryStr)) {
+      // developer.log("GLobal data contains $queryStr !",
+      //     name: 'com.etchandgear.garo');
+      photoPaths.clear();
+      final resultPaths = globalScores[queryStr]?.keys.toList() as List<String>;
+      resultPaths.sort((b, a) => (globalScores[queryStr]?[a] as double)
+          .compareTo(globalScores[queryStr]?[b] as double));
+      // developer.log(resultPaths.toString(), name: 'com.etchandgear.garo');
+      setState(() {
+        for (final resPth in resultPaths) {
+          photoPaths.add(dart_path.join(rootPath, resPth));
+        }
+      });
+    }
   }
 
   @override
@@ -253,18 +310,18 @@ class _MyHomePageState extends State<MyHomePage> {
                 ),
                 itemBuilder: ((context, index) {
                   return Card(
-                    margin: const EdgeInsets.all(2.0),
+                      margin: const EdgeInsets.all(2.0),
                       child: InkWell(
-                    onTap: () => _openImage(index),
-                    child: index < photoPaths.length
-                        ? Image.file(
-                            File(photoPaths[index]),
-                            fit: BoxFit.cover,
-                            cacheWidth: 192,
-                            isAntiAlias: true,
-                          )
-                        : Image.asset("assets/images/placeholder.png"),
-                  ));
+                        onTap: () => _openImage(index),
+                        child: index < photoPaths.length
+                            ? Image.file(
+                                File(photoPaths[index]),
+                                fit: BoxFit.cover,
+                                cacheWidth: 192,
+                                isAntiAlias: true,
+                              )
+                            : Image.asset("assets/images/placeholder.png"),
+                      ));
                 }),
               ),
             ),
