@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:autotag_gallery/pages/image_view.dart';
 import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
@@ -7,6 +8,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as dart_path;
 import 'dart:developer' as developer;
 import 'package:google_mlkit_image_labeling/google_mlkit_image_labeling.dart';
+
+const logName = 'com.etchandgear.garo';
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key, required this.title});
@@ -71,9 +74,13 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   void _openImage(int idx) {
-    developer.log("opening image ${photoPaths[idx]}",
-        name: 'com.etchandgear.garo');
-    // TODO
+    developer.log("opening image ${photoPaths[idx]}", name: logName);
+    final name = dart_path.basename(photoPaths[idx]);
+    Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (context) =>
+                ImageViewPage(imgdata: ImageData(photoPaths[idx], name))));
   }
 
   @override
@@ -95,17 +102,21 @@ class _MyHomePageState extends State<MyHomePage> {
   late ImageLabeler _imageLabeler;
 
   Future<List<ImageLabel>> _processImage(int idx) async {
-    final imgPath = photoPaths[idx];
-    final labels =
-        await _imageLabeler.processImage(InputImage.fromFilePath(imgPath));
-    String text = 'Labels found: ${labels.length}\n\n';
-    for (final label in labels) {
-      text += 'Label: ${label.label}, '
-          'Confidence: ${label.confidence.toStringAsFixed(2)}\n\n';
+    try {
+      final imgPath = photoPaths[idx];
+      final labels =
+          await _imageLabeler.processImage(InputImage.fromFilePath(imgPath));
+      String text = 'Labels found: ${labels.length}\n\n';
+      for (final label in labels) {
+        text += 'Label: ${label.label}, '
+            'Confidence: ${label.confidence.toStringAsFixed(2)}\n\n';
+      }
+      developer.log('image: $imgPath, result: $text', name: logName);
+      return labels;
+    } catch (e) {
+      developer.log(e.toString(), name: logName, level: 1);
+      return [ImageLabel.fromJson({})];
     }
-    developer.log('image: $imgPath, result: $text',
-        name: 'com.etchandgear.garo');
-    return labels;
   }
 
   void _loadImagesData(bool runIndexing) async {
@@ -113,7 +124,7 @@ class _MyHomePageState extends State<MyHomePage> {
       if (await Permission.storage.request().isGranted |
           await Permission.photos.request().isGranted) {
         final extDir = await getExternalStorageDirectory();
-        developer.log((extDir?.path).toString(), name: 'com.etchandgear.garo');
+        developer.log((extDir?.path).toString(), name: logName);
         // /storage/emulated/0/Android/data/com.example.garo_flutter/files
         final storageRoot = extDir?.parent.parent.parent.parent;
 
@@ -121,7 +132,7 @@ class _MyHomePageState extends State<MyHomePage> {
           final idxRootPath = dart_path.join(extDir.path, '.indices');
 
           rootPath = storageRoot.path;
-          developer.log((rootPath).toString(), name: 'com.etchandgear.garo');
+          developer.log((rootPath).toString(), name: logName);
 
           photoPaths.clear();
 
@@ -140,8 +151,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 ].contains(dart_path.extension(filePath.path).toLowerCase())) {
                   // print("adding");
 
-                  developer.log((filePath.path).toString(),
-                      name: 'com.etchandgear.garo');
+                  developer.log((filePath.path).toString(), name: logName);
                   photoPaths.add(filePath.path);
 
                   // if (mounted &&
@@ -151,7 +161,7 @@ class _MyHomePageState extends State<MyHomePage> {
                   //   //     Image.file(File('some/path')) as ImageProvider, context,
                   //   //     size: const Size.fromWidth(192));
                   //   precacheImage(FileImage(File(filePath.path)), context);
-                  //   developer.log("PRE-CACHING", name: 'com.etchandgear.garo');
+                  //   developer.log("PRE-CACHING", name: logName);
                   // }
                 }
               }
@@ -170,7 +180,7 @@ class _MyHomePageState extends State<MyHomePage> {
             if (touchFile.existsSync()) {
               final rawDataStr = touchFile.readAsStringSync();
               // developer.log("reading existing data - $rawDataStr",
-              //     name: 'com.etchandgear.garo');
+              //     name: logName);
 
               final labelsData = jsonDecode(rawDataStr) as Map<String, dynamic>;
 
@@ -210,10 +220,10 @@ class _MyHomePageState extends State<MyHomePage> {
               indexingText =
                   'Indexing images - $indexedCount of ${photoPaths.length}';
               // developer.log("indexed $indexingFrac fraction of total images",
-              //     name: 'com.etchandgear.garo');
+              //     name: logName);
             });
           }
-          developer.log(globalScores.toString(), name: 'com.etchandgear.garo');
+          developer.log(globalScores.toString(), name: logName);
         }
 
         setState(() {
@@ -224,16 +234,16 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   void _searchAPI(String queryStr) async {
-    developer.log(queryStr, name: 'com.etchandgear.garo');
+    developer.log(queryStr, name: logName);
 
     if (globalScores.containsKey(queryStr)) {
       // developer.log("GLobal data contains $queryStr !",
-      //     name: 'com.etchandgear.garo');
+      //     name: logName);
       photoPaths.clear();
       final resultPaths = globalScores[queryStr]?.keys.toList() as List<String>;
       resultPaths.sort((b, a) => (globalScores[queryStr]?[a] as double)
           .compareTo(globalScores[queryStr]?[b] as double));
-      // developer.log(resultPaths.toString(), name: 'com.etchandgear.garo');
+      // developer.log(resultPaths.toString(), name: logName);
       setState(() {
         titleWidget = Text('${resultPaths.length} results for "$queryStr"');
         for (final resPth in resultPaths) {
