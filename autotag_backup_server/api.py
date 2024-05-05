@@ -31,6 +31,9 @@ app = FastAPI()
 
 root_folder = os.path.join(os.path.dirname(__file__), 'api_data')
 
+if not os.path.exists(root_folder):
+    os.makedirs(root_folder, exist_ok=True)
+
 # ts_format = "%d %B %Y %I:%M:%S %p"
 
 # non-endpoint functions
