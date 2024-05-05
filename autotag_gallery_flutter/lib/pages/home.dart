@@ -23,6 +23,7 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   double indexingFrac = 0.0;
   String indexingText = '';
+  String indexingFileName = '';
   bool isIndexing = false;
   String rootPath = '';
   late Text titleWidget;
@@ -174,54 +175,64 @@ class _MyHomePageState extends State<MyHomePage> {
 
           globalScores.clear();
           for (var photoPth in photoPaths) {
-            final noRootPhotoPth = photoPth.substring(rootPath.length + 1);
-            final touchPath = dart_path.join(idxRootPath, noRootPhotoPth);
-            final touchFile = File(touchPath);
-            if (touchFile.existsSync()) {
-              final rawDataStr = touchFile.readAsStringSync();
-              // developer.log("reading existing data - $rawDataStr",
-              //     name: logName);
-
-              final labelsData = jsonDecode(rawDataStr) as Map<String, dynamic>;
-
-              labelsData.forEach((key, value) {
-                final cleanKey = key.toLowerCase();
-                if (!globalScores.containsKey(cleanKey)) {
-                  globalScores[cleanKey] = {};
-                }
-                globalScores[cleanKey]?[noRootPhotoPth] = value as double;
-              });
-
-              indexStat.add(true);
-            } else if (runIndexing) {
-              final idxPathDir = Directory(dart_path.dirname(touchPath));
-              if (!idxPathDir.existsSync()) {
-                idxPathDir.createSync(recursive: true);
-              }
-
-              final labels = await _processImage(indexedCount);
-              final Map<String, double> labelsData = {};
-              for (final label in labels) {
-                labelsData[label.label] = label.confidence.toDouble();
-                // text += 'Label: ${label.label}, '
-                //     'Confidence: ${label.confidence.toStringAsFixed(2)}\n\n';
-              }
-              touchFile.writeAsStringSync(jsonEncode(labelsData));
-
-              indexStat.add(true);
-            } else {
-              indexStat.add(false);
-            }
-
             setState(() {
-              // localImageProvider.photoPaths.add(photoPaths[loadedCount]);
-              indexedCount++;
-              indexingFrac = indexedCount / photoPaths.length;
-              indexingText =
-                  'Indexing images - $indexedCount of ${photoPaths.length}';
-              // developer.log("indexed $indexingFrac fraction of total images",
-              //     name: logName);
+              indexingFileName = photoPth;
             });
+            try {
+              final noRootPhotoPth = photoPth.substring(rootPath.length + 1);
+              final touchPath = dart_path.join(idxRootPath, noRootPhotoPth);
+              final touchFile = File(touchPath);
+              if (touchFile.existsSync()) {
+                final rawDataStr = touchFile.readAsStringSync();
+                // developer.log("reading existing data - $rawDataStr",
+                //     name: logName);
+
+                final labelsData =
+                    jsonDecode(rawDataStr) as Map<String, dynamic>;
+
+                labelsData.forEach((key, value) {
+                  final cleanKey = key.toLowerCase();
+                  if (!globalScores.containsKey(cleanKey)) {
+                    globalScores[cleanKey] = {};
+                  }
+                  globalScores[cleanKey]?[noRootPhotoPth] = value as double;
+                });
+
+                indexStat.add(true);
+              } else if (runIndexing) {
+                final idxPathDir = Directory(dart_path.dirname(touchPath));
+                if (!idxPathDir.existsSync()) {
+                  idxPathDir.createSync(recursive: true);
+                }
+
+                final labels = await _processImage(indexedCount);
+                final Map<String, double> labelsData = {};
+                for (final label in labels) {
+                  labelsData[label.label] = label.confidence.toDouble();
+                  // text += 'Label: ${label.label}, '
+                  //     'Confidence: ${label.confidence.toStringAsFixed(2)}\n\n';
+                }
+                touchFile.writeAsStringSync(jsonEncode(labelsData));
+
+                indexStat.add(true);
+              } else {
+                indexStat.add(false);
+              }
+
+              setState(() {
+                // localImageProvider.photoPaths.add(photoPaths[loadedCount]);
+                indexedCount++;
+                indexingFrac = indexedCount / photoPaths.length;
+                indexingText =
+                    'Indexing images - $indexedCount of ${photoPaths.length}';
+                // developer.log("indexed $indexingFrac fraction of total images",
+                //     name: logName);
+              });
+            } catch (e) {
+              setState(() {
+                indexingFileName = e.toString();
+              });
+            }
           }
           developer.log(globalScores.toString(), name: logName);
         }
@@ -354,9 +365,10 @@ class _MyHomePageState extends State<MyHomePage> {
       // ),
       bottomNavigationBar: isIndexing
           ? Container(
-              padding: const EdgeInsets.all(5.0),
-              child: const Text("Please wait..."),
-            )
+              constraints: BoxConstraints.tight(const Size.fromHeight(40)),
+              padding: const EdgeInsets.all(8.0),
+              alignment: Alignment.bottomCenter,
+              child: Text(indexingFileName))
           : Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
