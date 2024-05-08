@@ -1,7 +1,7 @@
 
 import os
 from io import BytesIO
-from PIL import Image
+from PIL import Image, ImageOps
 import logging
 
 from typing_extensions import Annotated
@@ -54,6 +54,8 @@ def get_1080p_res(og_width: int, og_height: int):
     elif og_width > og_height:
         # landscape
         tw, th = res_large, res_small
+    else:
+        tw, th = res_large, res_large
     logger.info("finding resolution to scale down to for input wxh: %d x %d" % (
         og_width, og_height))
     scale_x, scale_y = tw / og_width, th / og_height
@@ -99,7 +101,8 @@ def api_index(
         og_size_bytes = f.write(file.file.read())
 
     #  generate smaller image, send that back
-    pil_img = Image.open(file.file)
+    pil_img_orig = Image.open(file.file)
+    pil_img = ImageOps.exif_transpose(pil_img_orig)
     img_w, img_h = pil_img.size[:2]
 
     # find aspect ratio retained image resolution
@@ -111,7 +114,7 @@ def api_index(
 
         temp = BytesIO()
 
-        img_format = pil_img.format
+        img_format = pil_img_orig.format
         logger.info("format - %s" % img_format)
 
         pil_resized.save(temp, format=img_format, optimize=True, quality=75)
