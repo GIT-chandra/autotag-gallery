@@ -8,12 +8,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as dart_path;
 import 'dart:developer' as developer;
 import 'package:google_mlkit_image_labeling/google_mlkit_image_labeling.dart';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+// import 'package:http/http.dart' as http;
+// import 'package:shared_preferences/shared_preferences.dart';
 
 const logName = 'com.etchandgear.garo';
-const keyServAddr = 'server_address';
-const keyDbName = 'db_name';
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key, required this.title});
@@ -36,13 +34,13 @@ class _MyHomePageState extends State<MyHomePage> {
   List<bool> indexStat = [];
 
   final TextEditingController _searchTextController = TextEditingController();
-  final TextEditingController _dbNameTextController = TextEditingController();
-  final TextEditingController _apiAddrTextController = TextEditingController();
+  // final TextEditingController _dbNameTextController = TextEditingController();
+  // final TextEditingController _apiAddrTextController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
   final Map<String, Map<String, double>> globalScores = {};
 
-  late final SharedPreferences sharedPrefs;
+  // late final SharedPreferences sharedPrefs;
 
   @override
   void dispose() {
@@ -82,60 +80,6 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  Future<void> _displayBackupInputDialog(BuildContext context) async {
-    return showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Backup Images'),
-          content: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(
-                height: 20,
-              ),
-              const Text("Backup server address"),
-              TextField(
-                controller: _apiAddrTextController,
-                decoration: const InputDecoration(hintText: "Server address"),
-              ),
-              const SizedBox(
-                height: 20,
-              ),
-              const Text(
-                "Device identifier",
-                textAlign: TextAlign.left,
-              ),
-              TextField(
-                controller: _dbNameTextController,
-                decoration: const InputDecoration(hintText: "Device Name"),
-              ),
-              const SizedBox(height: 20),
-              LinearProgressIndicator(value: indexingFrac),
-              const SizedBox(height: 20),
-            ],
-          ),
-          actions: <Widget>[
-            MaterialButton(
-              child: const Text('Cancel'),
-              onPressed: () {
-                Navigator.pop(context);
-              },
-            ),
-            MaterialButton(
-              child: const Text('Start'),
-              onPressed: () {
-                Navigator.pop(context);
-                _runBackup(_apiAddrTextController.text.toLowerCase(),
-                    _dbNameTextController.text.toLowerCase());
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   void _openImage(int idx) {
     developer.log("opening image ${photoPaths[idx]}", name: logName);
     final name = dart_path.basename(photoPaths[idx]);
@@ -161,7 +105,7 @@ class _MyHomePageState extends State<MyHomePage> {
     // NOTE: default model is slower but works better -
     //    has 400+ classes, which seems to be higher that the local file from plugin example
 
-    sharedPrefs = await SharedPreferences.getInstance();
+    // sharedPrefs = await SharedPreferences.getInstance();
   }
 
   late ImageLabeler _imageLabeler;
@@ -361,78 +305,6 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  Future<void> _runBackup(String apiAddr, String dbName) async {
-    if (await Permission.manageExternalStorage.request().isGranted) {
-      sharedPrefs.setString(keyServAddr, apiAddr);
-      sharedPrefs.setString(keyDbName, dbName);
-      developer.log("backing up to db $dbName at $apiAddr", name: logName);
-      final url = Uri.http(apiAddr, 'upload/');
-
-      final extDir = await getExternalStorageDirectory();
-      developer.log((extDir?.path).toString(), name: logName);
-
-      if (extDir == null) {
-        return;
-      }
-      final bakRootPath = dart_path.join(extDir.path, '.backups');
-      var backedCount = 0;
-
-      setState(() {
-        isIndexing = true;
-      });
-
-      for (var photoPth in photoPaths) {
-        setState(() {
-          indexingFileName = photoPth;
-        });
-        try {
-          final noRootPhotoPth = photoPth.substring(rootPath.length + 1);
-          final touchPath = dart_path.join(bakRootPath, noRootPhotoPth);
-          final touchFile = File(touchPath);
-          if (!touchFile.existsSync()) {
-            var request = http.MultipartRequest("POST", url);
-            request.fields['db_name'] = dbName;
-            request.fields['file_path'] = noRootPhotoPth;
-            request.files
-                .add(await http.MultipartFile.fromPath('file', photoPth));
-
-            var streamedResponse = await request.send();
-            var response = await http.Response.fromStream(streamedResponse);
-
-            if (response.statusCode == 200) {
-              // save the smaller file
-              // final resizedPath = '$photoPth.resized.jpg';
-              // developer.log(resizedPath, name: logName);
-              // final writeFile = File(resizedPath);
-
-              final writeFile = File(photoPth);
-
-              writeFile.writeAsBytesSync(response.bodyBytes);
-            }
-
-            if (response.statusCode == 200 || response.statusCode == 204) {
-              touchFile.createSync(recursive: true);
-            }
-          }
-
-          setState(() {
-            // localImageProvider.photoPaths.add(photoPaths[loadedCount]);
-            backedCount++;
-            indexingFrac = backedCount / photoPaths.length;
-            indexingText = 'Backing up - $backedCount of ${photoPaths.length}';
-          });
-        } catch (e) {
-          developer.log(e.toString(), name: logName);
-        }
-      }
-      setState(() {
-        isIndexing = false;
-        indexingFrac = 0.0;
-        indexingText = '';
-      });
-    }
-  }
-
   // void _
   @override
   Widget build(BuildContext context) {
@@ -514,22 +386,6 @@ class _MyHomePageState extends State<MyHomePage> {
           : Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                IconButton(
-                    onPressed: () {
-                      final servAddr = sharedPrefs.getString(keyServAddr);
-
-                      if (servAddr != null) {
-                        _apiAddrTextController.text = servAddr;
-                      }
-
-                      final dbName = sharedPrefs.getString(keyDbName);
-                      if (dbName != null) {
-                        _dbNameTextController.text = dbName;
-                      }
-
-                      _displayBackupInputDialog(context);
-                    },
-                    icon: const Icon(Icons.backup)),
                 IconButton(
                     onPressed: () {
                       titleWidget = Text(widget.title);
